@@ -27,10 +27,14 @@ if [[ -z "${NO_BUILD:-}" ]]; then
     done
 fi
 
-# build-sign signiert ohne --arch nur die eigene Architektur.
-for arch in $(find "$REPO/refs/heads/app/$APPID" -mindepth 1 -maxdepth 1 -type d -printf '%f\n'); do
-    echo "==> Signiere $arch"
-    flatpak build-sign "$REPO" "$APPID" --arch="$arch" "${GPGARGS[@]}"
+# Jeden Ref signieren: App und Zusatzpakete (.Locale, .Debug), alle Architekturen.
+# build-sign signiert sonst nur die App der eigenen Architektur, und Flatpak
+# warnt beim Installieren über "no signatures found".
+for ref in $(ostree --repo="$REPO" refs | grep -E '^(app|runtime)/'); do
+    IFS=/ read -r kind id arch branch <<< "$ref"
+    echo "==> Signiere $ref"
+    flatpak build-sign "$REPO" "$id" "$branch" --arch="$arch" \
+        $([[ $kind == runtime ]] && echo --runtime) "${GPGARGS[@]}"
 done
 # Alte Deltas tragen evtl. unsignierte Commits in sich.
 rm -rf "$REPO/deltas" "$REPO/delta-indexes"
