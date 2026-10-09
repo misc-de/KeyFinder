@@ -37,7 +37,7 @@ class RadiusTest(unittest.TestCase):
         e = {"seen": 1000, "rssi": -60, "lat": 50.9, "lon": 6.9, "accuracy": 20,
              "fix_time": 1000}
         self.assertEqual(locations.radius(e), 20 + 15)
-        e["fix_time"] = 1100            # 100 s später geortet: Weg dazwischen
+        e["fix_time"] = 1100            # fix 100 s later: distance walked in between
         self.assertEqual(locations.radius(e), 20 + 15 + 140)
         e["fix_time"] = 1000 + 10 ** 6  # gedeckelt
         self.assertEqual(locations.radius(e), 20 + 15 + locations.MAX_DRIFT_M)
@@ -54,13 +54,13 @@ class RadiusTest(unittest.TestCase):
 
     def test_texts(self):
         now = time.mktime((2026, 10, 9, 18, 0, 0, 0, 0, -1))
-        self.assertEqual(mappage.when_text(now - 3600, now), "heute 17:00")
-        self.assertEqual(mappage.when_text(now - 86400, now), "gestern 18:00")
-        self.assertEqual(mappage.when_text(now - 3 * 86400, now), "06.10. 18:00")
+        self.assertEqual(mappage.when_text(now - 3600, now), "today 17:00")
+        self.assertEqual(mappage.when_text(now - 86400, now), "yesterday 18:00")
+        self.assertEqual(mappage.when_text(now - 3 * 86400, now), "10/06 18:00")
         self.assertEqual(mappage.distance_text(123), "120 m")
-        self.assertEqual(mappage.distance_text(2345), "2,3 km")
-        self.assertEqual(mappage.summary(None), "Noch kein Ort gespeichert")
-        self.assertIn("ohne Standort", mappage.summary({"seen": now}))
+        self.assertEqual(mappage.distance_text(2345), "2.3 km")
+        self.assertEqual(mappage.summary(None), "No place saved yet")
+        self.assertIn("without a position", mappage.summary({"seen": now}))
         self.assertGreater(mappage.zoom_for(50, 50), mappage.zoom_for(50, 5000))
 
 
@@ -75,7 +75,7 @@ class LocationStoreTest(unittest.TestCase):
             b = LocationStore(path)
             self.assertEqual(b.get(TAG), {"seen": 10, "rssi": -60, "lat": 1.0, "lon": 2.0,
                                           "accuracy": 30, "fix_time": 11})
-            self.assertFalse(b.reload())          # unverändert
+            self.assertFalse(b.reload())          # unchanged
             time.sleep(0.01)
             a.remove(TAG)
             a.save()
@@ -144,7 +144,7 @@ class ServiceTest(unittest.TestCase):
 
 
 @unittest.skipUnless(os.environ.get("KEYFINDER_BUS") == "session",
-                     "nur über tests/run-tests.sh (privater Session-Bus)")
+                     "only through tests/run-tests.sh (private session bus)")
 class FlatpakServiceTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -192,7 +192,7 @@ class FlatpakServiceTest(unittest.TestCase):
     def test_no_second_spawn_while_running(self):
         owner, _bus = tracker.claim_name()
         self.assertTrue(owner)
-        self.assertFalse(tracker.claim_name()[0])     # zweiter Dienst zieht sich zurück
+        self.assertFalse(tracker.claim_name()[0])     # a second service backs off
         self.assertTrue(service.tracker_running())
         self.store.set_track(TAG, True)
         service.sync_blocking(self.store)
@@ -260,12 +260,12 @@ class TrackerTest(unittest.TestCase):
     def test_first_sighting_requests_fix_and_stores_it(self):
         self.scan((TAG.lower(), -60), (OTHER, -50))
         self.assertEqual(self.loc.starts, 1)
-        self.assertIsNone(self.tr.locations.get(OTHER))   # nicht getrackt
+        self.assertIsNone(self.tr.locations.get(OTHER))   # not tracked
         self.loc.emit("fix", 50.0, 7.0, 300.0)
         self.loc.emit("fix", 50.1, 7.1, 800.0)              # schlechter: ignoriert
         e = LocationStore(self.tr.locations.path).get(TAG)
         self.assertEqual((e["lat"], e["accuracy"], e["seen"], e["rssi"]), (50.0, 300.0, 1000, -60))
-        self.assertEqual(self.loc.stops, 0)                 # wartet auf Besseres
+        self.assertEqual(self.loc.stops, 0)                 # waits for something better
         self.loc.emit("fix", 50.2, 7.2, 20.0)
         self.assertEqual(self.tr.locations.get(TAG)["lat"], 50.2)
         self.assertEqual(self.loc.stops, 1)                 # gut genug: GPS aus
@@ -285,7 +285,7 @@ class TrackerTest(unittest.TestCase):
         self.scan((TAG, -70))
         self.loc.emit("fix", 50.0, 7.0, 10.0)
         self.now[0] += 60
-        self.scan()                                          # nicht mehr da
+        self.scan()                                          # gone
         self.assertEqual(self.loc.starts, 2)
         self.now[0] += 30
         self.loc.emit("fix", 50.5, 7.5, 15.0)
@@ -310,7 +310,7 @@ class TrackerTest(unittest.TestCase):
 
 
 @unittest.skipUnless(os.environ.get("KEYFINDER_BUS") == "session",
-                     "nur über tests/run-tests.sh (privater Session-Bus)")
+                     "only through tests/run-tests.sh (private session bus)")
 class LocatorTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

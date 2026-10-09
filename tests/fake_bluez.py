@@ -1,7 +1,7 @@
-"""Minimales BlueZ für Tests auf dem Session-Bus (nur was KeyFinder braucht).
+"""Minimal BlueZ for tests on the session bus (only what Key Finder needs).
 
-Aufruf: python3 fake_bluez.py <logdatei>
-Jede GATT-Schreiboperation und jeder Connect/Disconnect landet als JSON-Zeile im Log.
+Usage: python3 fake_bluez.py <logfile>
+Every GATT write and every connect/disconnect goes to the log as a JSON line.
 """
 
 import json
@@ -13,7 +13,7 @@ ADAPTER_PATH = "/org/bluez/hci0"
 U = "0000{:04x}-0000-1000-8000-00805f9b34fb".format
 
 DEVICES = {
-    # Adresse: (Name, UUIDs, Grund-RSSI, hat Immediate Alert, nur "request")
+    # address: (name, UUIDs, base RSSI, has Immediate Alert, "request" only)
     "AA:00:00:00:00:01": ("iTAG", [U(0x1802), U(0x1803), U(0xFFE0)], -50, True, False),
     "AA:00:00:00:00:02": ("Fernseher", [U(0x180A)], -80, False, False),
     "AA:00:00:00:00:03": ("Smart Tag", [U(0xFFE0)], -70, False, False),
@@ -144,7 +144,7 @@ class Fake:
         return None
 
     def advertise(self):
-        """Tags tauchen beim ersten Durchlauf auf, danach schwankt das RSSI."""
+        """Tags appear on the first run, then the RSSI wobbles."""
         self.tick += 1
         for address, (name, uuids, base, *_rest) in DEVICES.items():
             path = self.dev_path(address)

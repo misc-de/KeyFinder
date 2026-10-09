@@ -1,6 +1,7 @@
-"""Key Finder: iTags anlernen, piepen lassen, per Signalstärke suchen."""
+"""Key Finder: pair iTags, make them beep, search by signal strength."""
 
 import sys
+from pathlib import Path
 
 import gi
 
@@ -8,15 +9,30 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
-from . import categories, mappage, rssi, service  # noqa: E402
+from . import categories, i18n, mappage, rssi, service, settings  # noqa: E402
 from .bluez import BlueZ, IMMEDIATE_ALERT, ITAG_SERVICE, LINK_LOSS  # noqa: E402
+from .i18n import _  # noqa: E402
 from .locations import LocationStore  # noqa: E402
 from .store import TagStore  # noqa: E402
 
 APP_ID = "io.github.miscde.KeyFinder"
-BEEP_S = 10            # so lange piept der Tag, dann wird er abgeschaltet
+BEEP_S = 10            # the tag beeps this long, then it is switched off
 TICK_MS = 500
 TAG_WORDS = ("itag", "tag", "find", "key", "smart", "track", "anti", "lost")
+
+# Projects Key Finder is built on (About dialog, README).
+CREDITS = [
+    "GTK https://gtk.org",
+    "libadwaita https://gnome.pages.gitlab.gnome.org/libadwaita/",
+    "PyGObject https://pygobject.gnome.org",
+    "BlueZ https://www.bluez.org",
+    "GeoClue https://gitlab.freedesktop.org/geoclue/geoclue",
+    "libshumate https://gitlab.gnome.org/GNOME/libshumate",
+    "OpenStreetMap https://www.openstreetmap.org/copyright",
+    "Noto Color Emoji https://github.com/googlefonts/noto-emoji",
+    "protobuf-c https://github.com/protobuf-c/protobuf-c",
+    "Flatpak https://flatpak.org",
+]
 
 CSS = b"""
 .rssi-big { font-size: 48px; font-weight: 800; }
@@ -34,8 +50,17 @@ flowboxchild { padding: 0; border-radius: 12px; }
 """
 
 
+def version():
+    for candidate in (Path(__file__).resolve().parent.parent / "VERSION",):
+        try:
+            return candidate.read_text().strip()
+        except OSError:
+            pass
+    return ""
+
+
 class Square(Gtk.Widget):
-    """Hält sein Kind quadratisch: Höhe = zugeteilte Breite."""
+    """Keeps its child square: height = allocated width."""
 
     def __init__(self, child):
         super().__init__()
@@ -78,54 +103,80 @@ class Window(Adw.ApplicationWindow):
         self.tracker = rssi.SignalTracker()
         self.store = TagStore()
         self.locations = LocationStore()
-        self.beeping = {}      # Adresse -> GLib-Timeout zum Abschalten
-        self.busy = set()      # Adressen mit laufendem Verbindungsaufbau
+        self.beeping = {}      # address -> GLib timeout that switches it off
+        self.busy = set()      # addresses currently connecting
 
-        self.toasts = Adw.ToastOverlay()
-        self.nav = Adw.NavigationView()
-        self.toasts.set_child(self.nav)
-        self.set_content(self.toasts)
+        language = Gio.SimpleAction.new_stateful(
+            "language", GLib.VariantType("s"), GLib.Variant("s", settings.load()["language"]))
+        language.connect("change-state", self._on_language)
+        self.add_action(language)
+        about = Gio.SimpleAction(name="about")
+        about.connect("activate", lambda *_a: self._about())
+        self.add_action(about)
 
-        self.nav.add(self._build_main_page())
-        self.nav.connect("popped", self._on_popped)
-        self.detail = None
-        self.learn = None
-
+        self._build_ui()
         self.bluez.connect("rssi", lambda _b, addr, value: self.tracker.add(addr, value))
         self.bluez.connect("adapter-changed", lambda _b: self._update_banner())
         self.bluez.start_discovery()
         self.connect("close-request", self._on_close)
         GLib.timeout_add(TICK_MS, self._tick)
+        service.sync(self.store)   # background service to match the saved tags
+
+    def _build_ui(self):
+        """Builds all pages; called again when the language changes."""
+        self.detail = None
+        self.learn = None
+        self.learn_page = None
+        self.toasts = Adw.ToastOverlay()
+        self.nav = Adw.NavigationView()
+        self.toasts.set_child(self.nav)
+        self.set_content(self.toasts)
+        self.nav.add(self._build_main_page())
+        self.nav.connect("popped", self._on_popped)
         self._rebuild_tags()
         self._update_banner()
-        service.sync(self.store)   # Dienst passend zu den gespeicherten Tags
 
     def _on_popped(self, _nav, page):
         if self.detail and page is self.detail.page:
             self.detail = None
-        elif page is getattr(self, "learn_page", None):
+        elif page is self.learn_page:
             self.learn = None
 
-    # --- Hauptseite: angelernte Tags -----------------------------------
+    def _on_language(self, action, value):
+        action.set_state(value)
+        settings.set_value("language", value.get_string())
+        i18n.setup(value.get_string())
+        self._build_ui()
+
+    # --- main page: paired tags -----------------------------------------
 
     def _build_main_page(self):
         view = Adw.ToolbarView()
         header = Adw.HeaderBar()
-        add = Gtk.Button(icon_name="list-add-symbolic", tooltip_text="Tag anlernen")
+        add = Gtk.Button(icon_name="list-add-symbolic", tooltip_text=_("Pair a tag"))
         add.connect("clicked", lambda _b: self.open_learn())
         header.pack_end(add)
+        languages = Gio.Menu()
+        languages.append(_("System"), "win.language::system")
+        for code, name in i18n.LANGUAGES.items():
+            languages.append(name, f"win.language::{code}")
+        menu = Gio.Menu()
+        menu.append_submenu(_("Language"), languages)
+        menu.append(_("About Key Finder"), "win.about")
+        header.pack_start(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu,
+                                         tooltip_text=_("Menu")))
         view.add_top_bar(header)
 
-        self.banner = Adw.Banner(title="Bluetooth ist ausgeschaltet",
-                                 button_label="Einschalten")
+        self.banner = Adw.Banner(title=_("Bluetooth is off"), button_label=_("Turn on"))
         self.banner.connect("button-clicked", lambda _b: self.bluez.power_on(self._power_done))
         view.add_top_bar(self.banner)
 
         self.main_stack = Gtk.Stack()
         empty = Adw.StatusPage(icon_name="bluetooth-symbolic",
-                               title="Noch kein Tag angelernt",
-                               description="Tag einschalten, nah ans Handy halten und anlernen.")
-        btn = Gtk.Button(label="Tag anlernen", halign=Gtk.Align.CENTER)
+                               title=_("No tag paired yet"),
+                               description=_("Switch the tag on, hold it close to the phone "
+                                             "and pair it."))
+        btn = Gtk.Button(label=_("Pair a tag"), halign=Gtk.Align.CENTER)
         btn.add_css_class("pill")
         btn.add_css_class("suggested-action")
         btn.connect("clicked", lambda _b: self.open_learn())
@@ -158,7 +209,7 @@ class Window(Adw.ApplicationWindow):
         self._update_tags()
 
     def _build_tile(self, tag):
-        """Quadratische Kachel: Name, Signal, Nähe, Pegel und Glocke."""
+        """Square tile: name, signal, proximity, level and bell."""
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         card.add_css_class("tile")
         name = Gtk.Label(label=tag["name"], xalign=0, wrap=True, lines=2,
@@ -178,7 +229,7 @@ class Window(Adw.ApplicationWindow):
         for w in (name, value, status, bottom):
             card.append(w)
 
-        # Symbol als blasses Wasserzeichen hinter dem Inhalt
+        # The symbol as a faint watermark behind the content
         mark = Gtk.Label(label=categories.emoji(tag.get("category")), halign=Gtk.Align.END,
                          valign=Gtk.Align.CENTER, margin_end=8, can_target=False)
         mark.add_css_class("tile-emoji")
@@ -196,17 +247,17 @@ class Window(Adw.ApplicationWindow):
 
     def _status_word(self, address):
         if address in self.busy:
-            return "verbinde …"
+            return _("connecting …")
         if address in self.beeping:
-            return "piept"
+            return _("beeping")
         dev = self.bluez.device(address)
         if dev and dev["connected"]:
-            return "verbunden"
+            return _("connected")
         return rssi.proximity(self.tracker.current(address))
 
     def _beep_button(self, address):
         btn = Gtk.Button(icon_name="audio-volume-high-symbolic", valign=Gtk.Align.CENTER,
-                         tooltip_text="Piepen")
+                         tooltip_text=_("Beep"))
         btn.add_css_class("flat")
         btn.connect("clicked", lambda _b: self.toggle_beep(address))
         btn.address = address
@@ -216,20 +267,16 @@ class Window(Adw.ApplicationWindow):
         beeping = btn.address in self.beeping
         btn.set_icon_name("media-playback-stop-symbolic" if beeping
                           else "audio-volume-high-symbolic")
-        btn.set_tooltip_text("Piepen beenden" if beeping else "Piepen")
+        btn.set_tooltip_text(_("Stop beeping") if beeping else _("Beep"))
         btn.set_sensitive(btn.address not in self.busy)
 
     def _status_text(self, address):
         value = self.tracker.current(address)
+        if address in self.busy or address in self.beeping or value is None:
+            return self._status_word(address)
         dev = self.bluez.device(address)
-        if address in self.busy:
-            return "verbinde …"
-        if address in self.beeping:
-            return "piept"
         if dev and dev["connected"]:
-            return "verbunden"
-        if value is None:
-            return "nicht in Reichweite"
+            return _("connected")
         return f"{dbm(value)} · {rssi.proximity(value)}"
 
     def _update_tags(self):
@@ -244,21 +291,21 @@ class Window(Adw.ApplicationWindow):
         if not self.bluez.ready:
             self.banner.set_revealed(False)
         elif not self.bluez.adapter_path:
-            self.banner.set_title("Kein Bluetooth-Adapter gefunden")
+            self.banner.set_title(_("No Bluetooth adapter found"))
             self.banner.set_button_label(None)
             self.banner.set_revealed(True)
         else:
-            self.banner.set_title("Bluetooth ist ausgeschaltet")
-            self.banner.set_button_label("Einschalten")
+            self.banner.set_title(_("Bluetooth is off"))
+            self.banner.set_button_label(_("Turn on"))
             self.banner.set_revealed(not self.bluez.powered)
 
     def _power_done(self, error):
         if error:
-            self.toast(f"Bluetooth ließ sich nicht einschalten: {error}")
+            self.toast(_("Could not turn Bluetooth on: {error}").format(error=error))
         else:
             self.bluez.start_discovery()
 
-    # --- Piepen --------------------------------------------------------
+    # --- beeping ----------------------------------------------------------
 
     def toggle_beep(self, address):
         if address in self.busy:
@@ -280,7 +327,7 @@ class Window(Adw.ApplicationWindow):
         self.bluez.beep(address, 2, done)
 
     def _beep_timeout(self, address):
-        self.beeping.pop(address, None)   # Quelle endet mit return False
+        self.beeping.pop(address, None)   # the source ends with return False
         self.stop_beep(address)
         return False
 
@@ -292,7 +339,7 @@ class Window(Adw.ApplicationWindow):
         self._update_all()
         return False
 
-    # --- Suchseite -----------------------------------------------------
+    # --- search page ------------------------------------------------------
 
     def open_detail(self, address):
         tag = self.store.get(address)
@@ -301,8 +348,8 @@ class Window(Adw.ApplicationWindow):
         view = Adw.ToolbarView()
         header = Adw.HeaderBar()
         menu = Gio.Menu()
-        menu.append("Bearbeiten", "tag.rename")
-        menu.append("Entfernen", "tag.remove")
+        menu.append(_("Edit"), "tag.rename")
+        menu.append(_("Remove"), "tag.remove")
         header.pack_end(Gtk.MenuButton(icon_name="view-more-symbolic", menu_model=menu))
         view.add_top_bar(header)
 
@@ -328,21 +375,24 @@ class Window(Adw.ApplicationWindow):
         d.trend = Gtk.Label()
         d.trend.add_css_class("trend")
         hint = Gtk.Label(wrap=True, justify=Gtk.Justification.CENTER,
-                         label="Langsam durch die Räume gehen: „wärmer“ heißt, du kommst "
-                               "näher. Das Handy dabei nicht abdecken.")
+                         label=_("Walk slowly through the rooms: \"warmer\" means you are "
+                                 "getting closer. Don't cover the phone."))
         hint.add_css_class("dim-label")
-        d.beep = Gtk.Button(label="Piepen", halign=Gtk.Align.CENTER, width_request=200)
+        d.beep = Gtk.Button(label=_("Beep"), halign=Gtk.Align.CENTER, width_request=200)
         d.beep.add_css_class("pill")
         d.beep.add_css_class("suggested-action")
         d.beep.connect("clicked", lambda _b: self.toggle_beep(address))
-        d.map = Gtk.Button(label="Auf der Karte", halign=Gtk.Align.CENTER, width_request=200)
+        # margin below: one empty line between the button and the last-seen line
+        d.map = Gtk.Button(label=_("On the map"), halign=Gtk.Align.CENTER, width_request=200,
+                           margin_bottom=18)
         d.map.add_css_class("pill")
         d.map.connect("clicked", lambda _b: self.open_map(address))
         d.where = Gtk.Label(wrap=True, justify=Gtk.Justification.CENTER)
         d.where.add_css_class("dim-label")
         d.where.add_css_class("caption")
-        track = Adw.SwitchRow(title="Standort merken",
-                              subtitle="Merkt sich im Hintergrund, wo der Tag zuletzt war",
+        track = Adw.SwitchRow(title=_("Remember location"),
+                              subtitle=_("Remembers in the background where the tag was "
+                                         "last seen"),
                               active=bool(tag.get("track")))
         track.connect("notify::active", lambda row, _p: self._set_track(address, row.get_active()))
         group = Adw.PreferencesGroup(margin_top=8)
@@ -353,8 +403,8 @@ class Window(Adw.ApplicationWindow):
         scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
         scroller.set_child(Adw.Clamp(child=box, maximum_size=480))
         view.set_content(scroller)
-        # ohne Tag: ein zweites Öffnen während der Zurück-Animation wäre sonst
-        # ein doppelter Tag und libadwaita würde die Seite verweigern
+        # no tag: opening it again during the back animation would be a
+        # duplicate tag, and libadwaita would refuse the page
         d.page = Adw.NavigationPage(child=view, title=tag["name"])
         self.nav.push(d.page)
         self._update_detail()
@@ -367,13 +417,13 @@ class Window(Adw.ApplicationWindow):
         d.value.set_label(dbm(value))
         dev = self.bluez.device(d.address)
         if value is None and dev and dev["connected"]:
-            d.prox.set_label("verbunden")
+            d.prox.set_label(_("connected"))
         else:
             d.prox.set_label(rssi.proximity(value))
         d.bar.set_value(rssi.fraction(value))
         trend = self.tracker.trend(d.address)
-        text = {rssi.WARMER: "▲ wärmer", rssi.COLDER: "▼ kälter",
-                rssi.STEADY: "● gleich", rssi.UNKNOWN: ""}[trend]
+        text = {rssi.WARMER: "▲ " + _("warmer"), rssi.COLDER: "▼ " + _("colder"),
+                rssi.STEADY: "● " + _("steady"), rssi.UNKNOWN: ""}[trend]
         d.trend.set_label(text)
         for cls in ("success", "error", "dim-label"):
             d.trend.remove_css_class(cls)
@@ -382,13 +432,13 @@ class Window(Adw.ApplicationWindow):
         d.map.set_sensitive(bool(entry and entry.get("lat") is not None))
         tag = self.store.get(d.address) or {}
         d.where.set_label(mappage.summary(entry) if (entry or tag.get("track"))
-                          else "„Standort merken“ einschalten, um den letzten Ort zu sehen")
+                          else _("Turn on \"Remember location\" to see the last place"))
         if d.address in self.busy:
-            d.beep.set_label("Verbinde …")
+            d.beep.set_label(_("Connecting …"))
             d.beep.set_sensitive(False)
         else:
             d.beep.set_sensitive(True)
-            d.beep.set_label("Stopp" if d.address in self.beeping else "Piepen")
+            d.beep.set_label(_("Stop") if d.address in self.beeping else _("Beep"))
 
     def _set_track(self, address, on):
         self.store.set_track(address, on)
@@ -396,7 +446,7 @@ class Window(Adw.ApplicationWindow):
 
         def done(error):
             if error:
-                self.toast("Hintergrunddienst ließ sich nicht schalten")
+                self.toast(_("Could not switch the background service"))
         service.sync(self.store, done, restart=True)
 
     def open_map(self, address):
@@ -414,15 +464,15 @@ class Window(Adw.ApplicationWindow):
             if self.detail and self.detail.address == address:
                 self.detail.page.set_title(name)
                 self.detail.icon.set_label(categories.emoji(category))
-        self.ask_name("Tag bearbeiten", tag["name"], "Speichern", save,
+        self.ask_name(_("Edit tag"), tag["name"], _("Save"), save,
                       category=tag.get("category"))
 
     def _remove(self, address):
         tag = self.store.get(address)
-        dialog = Adw.AlertDialog(heading=f"„{tag['name']}“ entfernen?",
-                                 body="Der Tag kann jederzeit neu angelernt werden.")
-        dialog.add_response("cancel", "Abbrechen")
-        dialog.add_response("remove", "Entfernen")
+        dialog = Adw.AlertDialog(heading=_("Remove \"{name}\"?").format(name=tag["name"]),
+                                 body=_("The tag can be paired again at any time."))
+        dialog.add_response("cancel", _("Cancel"))
+        dialog.add_response("remove", _("Remove"))
         dialog.set_response_appearance("remove", Adw.ResponseAppearance.DESTRUCTIVE)
 
         def on_response(_d, response):
@@ -438,7 +488,7 @@ class Window(Adw.ApplicationWindow):
         dialog.connect("response", on_response)
         dialog.present(self)
 
-    # --- Anlernen ------------------------------------------------------
+    # --- pairing ----------------------------------------------------------
 
     def open_learn(self):
         view = Adw.ToolbarView()
@@ -446,27 +496,27 @@ class Window(Adw.ApplicationWindow):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12,
                       margin_top=12, margin_bottom=12, margin_start=12, margin_end=12)
         hint = Gtk.Label(wrap=True, xalign=0,
-                         label="Tag einschalten (Taste kurz drücken) und direkt neben das "
-                               "Handy legen. Er steht dann ganz oben. Mit der Glocke "
-                               "lässt sich prüfen, ob es der richtige ist.")
+                         label=_("Switch the tag on (press its button briefly) and put it "
+                                 "right next to the phone. It then shows up at the top. The "
+                                 "bell tells you whether it is the right one."))
         box.append(hint)
         self.learn_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.learn_list.add_css_class("boxed-list")
         self.learn_list.set_sort_func(self._learn_sort)
-        self.learn_list.set_placeholder(Gtk.Label(label="Suche Geräte …", margin_top=24,
-                                                  margin_bottom=24))
+        self.learn_list.set_placeholder(Gtk.Label(label=_("Looking for devices …"),
+                                                  margin_top=24, margin_bottom=24))
         self.learn_list.connect("row-activated", lambda _l, row: self._learn_pick(row))
         box.append(self.learn_list)
-        self.learn_all = Adw.SwitchRow(title="Auch andere Geräte zeigen",
-                                       subtitle="Falls der Tag nicht erkannt wird")
-        self.learn_all.connect("notify::active", lambda *_: self._update_learn())
+        self.learn_all = Adw.SwitchRow(title=_("Show other devices too"),
+                                       subtitle=_("In case the tag is not recognised"))
+        self.learn_all.connect("notify::active", lambda *_a: self._update_learn())
         group = Adw.PreferencesGroup()
         group.add(self.learn_all)
         box.append(group)
         scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
         scroller.set_child(Adw.Clamp(child=box, maximum_size=600))
         view.set_content(scroller)
-        page = Adw.NavigationPage(child=view, title="Tag anlernen")
+        page = Adw.NavigationPage(child=view, title=_("Pair a tag"))
         self.learn_page = page
         self.learn = {}
         self.learn_sorted_at = 0
@@ -505,9 +555,9 @@ class Window(Adw.ApplicationWindow):
                 self.learn[address] = row
             row.value, row.probable = value, probable
             row.dev_name = dev["name"] if dev["has_name"] else ""
-            if fresh:   # erst jetzt, die Sortierung braucht value/probable
+            if fresh:   # only now: sorting needs value/probable
                 self.learn_list.append(row)
-            row.set_title(GLib.markup_escape_text(row.dev_name or "Unbekanntes Gerät"))
+            row.set_title(GLib.markup_escape_text(row.dev_name or _("Unknown device")))
             if address in self.busy or address in self.beeping:
                 status = self._status_text(address)
             else:
@@ -518,13 +568,13 @@ class Window(Adw.ApplicationWindow):
             if address not in visible:
                 self.learn_list.remove(self.learn.pop(address))
         now = GLib.get_monotonic_time()
-        if now - self.learn_sorted_at > 2_000_000:   # Reihenfolge nicht ständig umwerfen
+        if now - self.learn_sorted_at > 2_000_000:   # don't reshuffle all the time
             self.learn_sorted_at = now
             self.learn_list.invalidate_sort()
 
     def _learn_pick(self, row):
         address = row.address
-        default = row.dev_name if row.dev_name and row.dev_name.lower() != "itag" else "Schlüssel"
+        default = row.dev_name if row.dev_name and row.dev_name.lower() != "itag" else _("Keys")
 
         def save(name, category):
             if address in self.beeping:
@@ -532,14 +582,14 @@ class Window(Adw.ApplicationWindow):
             self.store.add(address, name, category)
             self._rebuild_tags()
             self.nav.pop_to_tag("main")
-            self.toast(f"„{name}“ angelernt")
-        self.ask_name("Tag anlernen", default, "Anlernen", save)
+            self.toast(_("\"{name}\" paired").format(name=name))
+        self.ask_name(_("Pair a tag"), default, _("Pair"), save)
 
-    # --- Allgemeines ---------------------------------------------------
+    # --- shared -----------------------------------------------------------
 
     def ask_name(self, heading, default, action_label, on_save, category=None):
-        """Name und Symbol abfragen; on_save(name, category)."""
-        dialog = Adw.AlertDialog(heading=heading, body="Wie soll der Tag heißen?")
+        """Asks for name and symbol; on_save(name, category)."""
+        dialog = Adw.AlertDialog(heading=heading, body=_("What should the tag be called?"))
         entry = Gtk.Entry(text=default, activates_default=True)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         box.append(entry)
@@ -554,8 +604,8 @@ class Window(Adw.ApplicationWindow):
         state = {"cat": category or categories.guess(default), "manual": bool(category)}
         buttons = {}
         group = None
-        for cid, label, emoji, _words in categories.CATEGORIES:
-            btn = Gtk.ToggleButton(label=emoji, tooltip_text=label)
+        for cid, _label, emoji, _words in categories.CATEGORIES:
+            btn = Gtk.ToggleButton(label=emoji, tooltip_text=categories.label(cid))
             btn.add_css_class("flat")
             if group:
                 btn.set_group(group)
@@ -563,9 +613,12 @@ class Window(Adw.ApplicationWindow):
             buttons[cid] = btn
             grid.append(btn)
 
+        def show_label(cid):
+            chosen.set_label(_("Symbol: {name}").format(name=categories.label(cid)))
+
         def show(cid):
             state["cat"] = cid
-            chosen.set_label(f"Symbol: {categories.label(cid)}")
+            show_label(cid)
             if not buttons[cid].get_active():
                 buttons[cid].set_active(True)
 
@@ -577,12 +630,12 @@ class Window(Adw.ApplicationWindow):
             btn.connect("toggled", on_toggled, cid)
 
         def on_name_changed(_e):
-            if not state["manual"]:   # Vorschlag folgt dem Namen, bis selbst gewählt
+            if not state["manual"]:   # the suggestion follows the name until picked
                 guessed = categories.guess(entry.get_text())
                 if guessed != state["cat"]:
                     state["cat"] = guessed
                     buttons[guessed].set_active(True)
-                    chosen.set_label(f"Symbol: {categories.label(guessed)}")
+                    show_label(guessed)
         entry.connect("changed", on_name_changed)
         show(state["cat"])
 
@@ -591,7 +644,7 @@ class Window(Adw.ApplicationWindow):
         scroller.set_child(grid)
         box.append(scroller)
         dialog.set_extra_child(box)
-        dialog.add_response("cancel", "Abbrechen")
+        dialog.add_response("cancel", _("Cancel"))
         dialog.add_response("save", action_label)
         dialog.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
         dialog.set_default_response("save")
@@ -604,6 +657,16 @@ class Window(Adw.ApplicationWindow):
         dialog.present(self)
         entry.grab_focus()
 
+    def _about(self):
+        about = Adw.AboutDialog(
+            application_name="Key Finder", application_icon=APP_ID, version=version(),
+            developer_name="misc-de", license_type=Gtk.License.MIT_X11,
+            website="https://github.com/misc-de/KeyFinder",
+            issue_url="https://github.com/misc-de/KeyFinder/issues",
+            comments=_("Find Bluetooth key tags: beep, signal strength, last place seen."))
+        about.add_acknowledgement_section(_("Built with"), CREDITS)
+        about.present(self)
+
     def toast(self, text):
         self.toasts.add_toast(Adw.Toast(title=GLib.markup_escape_text(text), timeout=4))
 
@@ -613,13 +676,13 @@ class Window(Adw.ApplicationWindow):
         self._update_learn()
 
     def _tick(self):
-        self.locations.reload()   # der Dienst schreibt neue Orte
+        self.locations.reload()   # the background service writes new places
         self._update_all()
         return True
 
     def _on_close(self, _w):
-        # Synchron: sonst endet der Prozess, bevor der Tag still ist, und BlueZ
-        # hält die Verbindung (und damit das Piepen) weiter.
+        # Synchronous: otherwise the process ends before the tag is quiet, and
+        # BlueZ keeps the connection (and with it the beeping).
         for address in list(self.beeping):
             GLib.source_remove(self.beeping.pop(address))
             self.bluez.beep_off_sync(address)
@@ -633,6 +696,7 @@ class App(Adw.Application):
 
     def do_startup(self):
         Adw.Application.do_startup(self)
+        i18n.setup(settings.load()["language"])
         css = Gtk.CssProvider()
         css.load_from_data(CSS, len(CSS))
         Gtk.StyleContext.add_provider_for_display(

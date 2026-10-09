@@ -1,8 +1,8 @@
-"""Minimales GeoClue2 für Tests auf dem Session-Bus.
+"""Minimal GeoClue2 for tests on the session bus.
 
-Aufruf: python3 fake_geoclue.py <logdatei> <lat> <lon> <genauigkeit>[,<genauigkeit>…]
-Nach Start liefert der Client nacheinander Positionen mit den angegebenen
-Genauigkeiten (alle 100 ms). Aufrufe landen als JSON-Zeilen im Log.
+Usage: python3 fake_geoclue.py <logfile> <lat> <lon> <accuracy>[,<accuracy>…]
+After Start the client delivers positions with the given accuracies one after
+another (every 100 ms). Calls go to the log as JSON lines.
 """
 
 import json

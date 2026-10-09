@@ -1,8 +1,8 @@
-"""Position des Handys von GeoClue.
+"""The phone's position from GeoClue.
 
-GeoClue bindet einen Client an die D-Bus-Verbindung, die ihn angelegt hat,
-deshalb läuft alles über eine gehaltene Verbindung (siehe furios_gps,
-FINDINGS.md §4). Phosh entscheidet als Agent über die Freigabe.
+GeoClue ties a client to the D-Bus connection that created it, so everything
+runs over one held connection. On Phosh the shell is GeoClue's agent and asks
+the user for permission.
 """
 
 import os
@@ -24,10 +24,10 @@ def _bus_type():
 
 
 class Locator(GObject.Object):
-    """start() fordert Positionen an, bis stop(); jede kommt als 'fix'."""
+    """start() asks for positions until stop(); each one arrives as 'fix'."""
 
     __gsignals__ = {
-        # Breite, Länge, Genauigkeit in m
+        # latitude, longitude, accuracy in m
         "fix": (GObject.SignalFlags.RUN_FIRST, None, (float, float, float)),
         "failed": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
     }
@@ -57,7 +57,7 @@ class Locator(GObject.Object):
             (self.client,) = bus.call_finish(result).unpack()
         except GLib.Error as e:
             return self._fail(e.message)
-        if not self.running:      # stop() kam dazwischen
+        if not self.running:      # stop() came in between
             self._delete(self.client)
             self.client = None
             return
@@ -71,7 +71,7 @@ class Locator(GObject.Object):
                               None, Gio.DBusCallFlags.NONE, 5000, None)
         except GLib.Error as e:
             return self._fail(e.message)
-        # Start wartet ggf. auf die Freigabe durch Phosh, deshalb asynchron.
+        # Start may wait for the user's permission, hence asynchronous.
         bus.call(GEOCLUE, self.client, CLIENT, "Start", None, None,
                  Gio.DBusCallFlags.NONE, 120000, None, self._started)
 
@@ -90,7 +90,7 @@ class Locator(GObject.Object):
                     GEOCLUE, new, PROPS, "Get", GLib.Variant("(ss)", (LOCATION, name)),
                     GLib.VariantType("(v)"), Gio.DBusCallFlags.NONE, 5000, None).unpack()
         except GLib.Error as e:
-            print("keyfinder: Position lesen:", e.message, flush=True)
+            print("keyfinder: reading position:", e.message, flush=True)
             return
         self.emit("fix", values["Latitude"], values["Longitude"], values["Accuracy"])
 

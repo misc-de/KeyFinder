@@ -1,7 +1,7 @@
 #!/bin/sh
-# README-Bilder neu erzeugen: unsichtbar (GTK-Broadway, kopfloses Chromium als
-# Anzeige-Client), Fake-BlueZ, erfundene Tags. Nichts auf diesem Rechner wird
-# geschaltet: systemctl ist eine Attrappe, Konfiguration liegt im Temp-Ordner.
+# Recreate the README pictures: invisible (GTK Broadway, headless Chromium as
+# display client), fake BlueZ, invented tags, English UI. Nothing on this
+# machine is switched: systemctl is a stand-in, the configuration is temporary.
 #   tools/screenshots.sh            → data/screenshots/*.png
 set -e
 cd "$(dirname "$0")/.."
@@ -20,7 +20,7 @@ sleep 2
 export GDK_BACKEND=broadway BROADWAY_DISPLAY=:7 KEYFINDER_BUS=session \
        KEYFINDER_CONFIG="$WORK/config/tags.json" KEYFINDER_DATA="$WORK/data" \
        KEYFINDER_SYSTEMCTL="$PWD/tests/fake-bin/systemctl" PYTHONWARNINGS=ignore \
-       ADW_DEBUG_COLOR_SCHEME=prefer-dark
+       ADW_DEBUG_COLOR_SCHEME=prefer-dark LANGUAGE=en
 mkdir -p data/screenshots
 python3 tools/screenshots.py data/screenshots "$WORK"
-echo "Bilder in data/screenshots/"
+echo "Pictures in data/screenshots/"

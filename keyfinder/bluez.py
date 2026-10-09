@@ -1,8 +1,8 @@
-"""BlueZ über D-Bus (Gio), ohne zusätzliche Python-Pakete.
+"""BlueZ over D-Bus (Gio), no extra Python packages.
 
-Der Hauptthread hält einen Spiegel der BlueZ-Objekte (GetManagedObjects +
-Signale). Verbindungsaufbau und GATT-Schreiben laufen in einem Hilfsthread
-mit synchronen Aufrufen, das Ergebnis kommt per GLib.idle_add zurück.
+The main thread keeps a mirror of BlueZ's objects (GetManagedObjects plus
+signals). Connecting and GATT writes run in a helper thread with synchronous
+calls; the result comes back through GLib.idle_add.
 """
 
 import os
@@ -10,6 +10,8 @@ import threading
 import time
 
 from gi.repository import Gio, GLib, GObject
+
+from .i18n import _
 
 BLUEZ = "org.bluez"
 ADAPTER = "org.bluez.Adapter1"
@@ -44,7 +46,7 @@ def _bus_type():
 
 
 def find_alert_chars(objects, device_path):
-    """Liefert (immediate_alert_char, link_loss_char) unterhalb des Geräts."""
+    """Returns (immediate_alert_char, link_loss_char) below the device."""
     services = {}
     for path, ifaces in objects.items():
         if SERVICE in ifaces and path.startswith(device_path + "/"):
@@ -64,11 +66,11 @@ def find_alert_chars(objects, device_path):
 
 class BlueZ(GObject.Object):
     __gsignals__ = {
-        # Adapter gefunden, ein- oder ausgeschaltet
+        # adapter found, switched on or off
         "adapter-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
-        # Gerät neu, geändert oder verschwunden (Adresse)
+        # device new, changed or gone (address)
         "device-changed": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
-        # neuer Signalwert (Adresse, dBm)
+        # new signal value (address, dBm)
         "rssi": (GObject.SignalFlags.RUN_FIRST, None, (str, int)),
     }
 
@@ -76,7 +78,7 @@ class BlueZ(GObject.Object):
         super().__init__()
         self.objects = {}
         self.adapter_path = None
-        self.ready = False     # erst nach der ersten Antwort von BlueZ aussagekräftig
+        self.ready = False     # meaningful only after BlueZ's first answer
         self.discovering_wanted = False
         self.bus = Gio.bus_get_sync(_bus_type(), None)
         self.bus.signal_subscribe(BLUEZ, OBJMGR, "InterfacesAdded", None, None,
@@ -88,7 +90,7 @@ class BlueZ(GObject.Object):
         Gio.bus_watch_name_on_connection(self.bus, BLUEZ, Gio.BusNameWatcherFlags.NONE,
                                          self._on_bluez_appeared, self._on_bluez_vanished)
 
-    # --- Spiegel der BlueZ-Objekte -------------------------------------
+    # --- mirror of BlueZ's objects --------------------------------------
 
     def _on_bluez_appeared(self, _conn, _name, _owner):
         self.bus.call(BLUEZ, "/", OBJMGR, "GetManagedObjects", None,
@@ -165,7 +167,7 @@ class BlueZ(GObject.Object):
             self.emit("rssi", address, int(changed["RSSI"]))
         self.emit("device-changed", address)
 
-    # --- Abfragen ------------------------------------------------------
+    # --- queries --------------------------------------------------------
 
     @property
     def powered(self):
@@ -174,7 +176,7 @@ class BlueZ(GObject.Object):
         return bool(self.objects[self.adapter_path][ADAPTER].get("Powered"))
 
     def devices(self):
-        """Alle bekannten Geräte als dict-Liste (nur dieses Adapters)."""
+        """All known devices of this adapter as a list of dicts."""
         result = []
         for path, ifaces in self.objects.items():
             dev = ifaces.get(DEVICE)
@@ -205,13 +207,13 @@ class BlueZ(GObject.Object):
         self.bus.call(BLUEZ, self.adapter_path, PROPS, "Set",
                       GLib.Variant("(ssv)", (ADAPTER, "Powered", GLib.Variant("b", True))),
                       None, Gio.DBusCallFlags.NONE, -1, None,
-                      lambda bus, res: self._finish(bus, res, "Einschalten", callback))
+                      lambda bus, res: self._finish(bus, res, "Power on", callback))
 
     def start_discovery(self):
         self.discovering_wanted = True
         if not self.adapter_path:
             return
-        # Mit gesetztem Filter meldet BlueZ jede RSSI-Änderung (sonst erst ab 8 dB).
+        # With a filter set BlueZ reports every RSSI change (otherwise only from 8 dB).
         flt = {"Transport": GLib.Variant("s", "le"),
                "DuplicateData": GLib.Variant("b", True)}
         self.bus.call(BLUEZ, self.adapter_path, ADAPTER, "SetDiscoveryFilter",
@@ -244,10 +246,10 @@ class BlueZ(GObject.Object):
         if callback:
             callback(error)
 
-    # --- Piepen (Hilfsthread) ------------------------------------------
+    # --- beeping (helper thread) ----------------------------------------
 
     def beep(self, address, level, callback, disconnect=False):
-        """level 0 = aus, 1 = leise, 2 = laut. callback(error_or_None) im Hauptthread."""
+        """level 0 = off, 1 = mild, 2 = high. callback(error_or_None) in the main thread."""
         def worker():
             try:
                 self._beep_sync(address, level, disconnect)
@@ -303,28 +305,28 @@ class BlueZ(GObject.Object):
                 path = p
                 break
         if path is None:
-            raise BeepError("Tag ist gerade nicht in Reichweite.")
+            raise BeepError(_("The tag is out of range right now."))
         if level == 0 and not objects[path][DEVICE].get("Connected"):
-            return  # nicht verbunden = piept nicht (Link-Loss ist abgeschaltet)
+            return  # not connected = not beeping (link loss is switched off)
 
         if not objects[path][DEVICE].get("Connected"):
             try:
                 self._call(path, DEVICE, "Connect", timeout=CONNECT_TIMEOUT_MS)
             except GLib.Error:
-                time.sleep(0.5)  # iTags brechen den ersten Versuch gern ab
+                time.sleep(0.5)  # iTags like to abort the first attempt
                 self._call(path, DEVICE, "Connect", timeout=CONNECT_TIMEOUT_MS)
 
         deadline = time.monotonic() + RESOLVE_TIMEOUT_S
         while not self._device_prop(path, "ServicesResolved"):
             if time.monotonic() > deadline:
-                raise BeepError("Verbunden, aber der Tag meldet seine Dienste nicht.")
+                raise BeepError(_("Connected, but the tag does not report its services."))
             time.sleep(0.1)
 
         immediate, link_loss = find_alert_chars(self._managed(), path)
         if immediate is None:
-            raise BeepError("Dieses Gerät kann nicht piepen (kein Immediate-Alert-Dienst).")
+            raise BeepError(_("This device cannot beep (no Immediate Alert service)."))
         if link_loss:
-            # Sonst piept der Tag bei jedem Verbindungsabbruch von selbst los.
+            # Otherwise the tag starts beeping by itself whenever the link drops.
             try:
                 self._write(link_loss, 0, "request")
             except GLib.Error:
@@ -356,9 +358,9 @@ class BlueZ(GObject.Object):
 def _friendly(message):
     m = message.lower()
     if "timeout" in m or "timed out" in m or "abort" in m or "page-timeout" in m:
-        return "Tag antwortet nicht – zu weit weg oder Akku leer?"
+        return _("The tag does not answer – too far away or battery empty?")
     if "notready" in m or "not ready" in m:
-        return "Bluetooth ist nicht bereit."
+        return _("Bluetooth is not ready.")
     if "inprogress" in m or "in progress" in m:
-        return "Verbindung läuft schon, bitte kurz warten."
+        return _("Already connecting, please wait a moment.")
     return message.split(":", 1)[-1].strip() or message

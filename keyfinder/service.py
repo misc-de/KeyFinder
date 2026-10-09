@@ -1,13 +1,13 @@
-"""Hintergrunddienst ein- oder ausschalten, abgeleitet aus den gespeicherten Tags.
+"""Switch the background service on or off, derived from the saved tags.
 
-Läuft genau dann, wenn mindestens ein Tag „Standort merken“ hat. Die App ruft
-das nach jeder Änderung und beim Start auf, install.sh nach jedem Update,
-damit der Zustand nie an einem Handgriff außerhalb der App hängt.
+It runs exactly when at least one tag has "Remember location" on. The app
+calls this on every change and at start, install.sh after every update, so
+the state never depends on a manual step outside the app.
 
-Zwei Wege: native Installation über eine systemd-User-Unit; im Flatpak (kein
-systemctl in der Sandbox) über einen Autostart-Eintrag für die Anmeldung und
-flatpak-spawn für sofort. Ausgeschaltet beendet sich der Dienst selbst, sobald
-er keinen Tag mit Option mehr findet (spätestens nach einer Runde).
+Two ways: a native install uses a systemd user unit; inside Flatpak (no
+systemctl in the sandbox) an autostart entry for the next login plus
+flatpak-spawn for right now. Switched off, the service ends by itself as soon
+as it finds no tag with the option (after one round at the latest).
 """
 
 import os
@@ -21,8 +21,8 @@ TRACKER_NAME = "io.github.miscde.KeyFinder.Tracker"
 APP_ID = "io.github.miscde.KeyFinder"
 AUTOSTART_ENTRY = f"""[Desktop Entry]
 Type=Application
-Name=Key Finder (Hintergrund)
-Comment=Merkt sich, wo Tags mit „Standort merken“ zuletzt waren
+Name=Key Finder (background)
+Comment=Remembers where tags were last seen
 Exec=flatpak run --command=keyfinder {APP_ID} --tracker
 X-Flatpak={APP_ID}
 NoDisplay=true
@@ -37,7 +37,7 @@ def in_flatpak():
 
 
 def autostart_file():
-    # Im Flatpak zeigt XDG_CONFIG_HOME in ~/.var/app; Autostart liest ~/.config.
+    # In Flatpak XDG_CONFIG_HOME points into ~/.var/app; autostart reads ~/.config.
     base = os.environ.get("KEYFINDER_AUTOSTART_DIR") or os.path.expanduser("~/.config/autostart")
     return Path(base) / f"{TRACKER_NAME}.desktop"
 
@@ -55,7 +55,7 @@ def tracker_running():
 
 
 def _sync_flatpak(store):
-    """Schaltet Autostart und startet den Dienst; liefert Fehler oder None."""
+    """Switches autostart and starts the service; returns an error or None."""
     path = autostart_file()
     try:
         if wanted(store):
@@ -63,14 +63,14 @@ def _sync_flatpak(store):
             path.write_text(AUTOSTART_ENTRY)
             if not tracker_running():
                 spawn = os.environ.get("KEYFINDER_SPAWN", "flatpak-spawn").split()
-                # eigene Sandbox: überlebt das Schließen der App
+                # its own sandbox: survives closing the app
                 Gio.Subprocess.new(spawn + ["keyfinder", "--tracker"],
                                    Gio.SubprocessFlags.STDOUT_SILENCE
                                    | Gio.SubprocessFlags.STDERR_SILENCE)
         else:
             path.unlink(missing_ok=True)
     except (OSError, GLib.Error) as e:
-        print("keyfinder: Hintergrunddienst:", e, flush=True)
+        print("keyfinder: background service:", e, flush=True)
         return str(e)
     return None
 
@@ -85,7 +85,7 @@ def wanted(store):
 
 def command(store, restart=False):
     if wanted(store):
-        if restart:   # liest die geänderte Tag-Liste sofort ein
+        if restart:   # reads the changed tag list right away
             return [[systemctl(), "--user", "enable", UNIT],
                     [systemctl(), "--user", "restart", UNIT]]
         return [[systemctl(), "--user", "enable", "--now", UNIT]]
@@ -93,7 +93,7 @@ def command(store, restart=False):
 
 
 def sync(store, callback=None, restart=False):
-    """Asynchron (für die App); callback(error_or_None)."""
+    """Asynchronous (for the app); callback(error_or_None)."""
     if in_flatpak():
         error = _sync_flatpak(store)
         if callback:
@@ -109,7 +109,7 @@ def sync(store, callback=None, restart=False):
         try:
             proc = Gio.Subprocess.new(steps[i], Gio.SubprocessFlags.STDOUT_SILENCE
                                       | Gio.SubprocessFlags.STDERR_PIPE)
-        except Exception as e:  # systemctl fehlt
+        except Exception as e:  # no systemctl
             if callback:
                 callback(str(e))
             return
@@ -122,7 +122,7 @@ def sync(store, callback=None, restart=False):
             if p.get_exit_status() != 0:
                 print("keyfinder:", " ".join(steps[i][1:]), "→", (err or "").strip(), flush=True)
                 if callback:
-                    callback((err or "").strip() or "systemctl fehlgeschlagen")
+                    callback((err or "").strip() or "systemctl failed")
                 return
             run(i + 1)
         proc.communicate_utf8_async(None, None, done)

@@ -2,7 +2,8 @@
 import os
 import sys
 
-# Installiert liegt das Paket neben dem Starter (~/.local/lib/keyfinder), im Quellbaum eine Ebene höher.
+# Installed, the package sits next to this launcher (~/.local/lib/keyfinder, /app/lib/keyfinder);
+# in the source tree one level up.
 here = os.path.dirname(os.path.realpath(__file__))
 for candidate in (here, os.path.join(here, "..")):
     if os.path.isdir(os.path.join(candidate, "keyfinder")):
@@ -10,7 +11,7 @@ for candidate in (here, os.path.join(here, "..")):
         break
 
 if "--tracker" in sys.argv[1:]:
-    from keyfinder.tracker import main  # Hintergrunddienst, ohne GTK
+    from keyfinder.tracker import main  # background service, no GTK
 elif "--sync-service" in sys.argv[1:]:
     from keyfinder import service
     from keyfinder.store import TagStore

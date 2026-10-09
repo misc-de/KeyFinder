@@ -1,4 +1,4 @@
-"""Erzeugt die README-Bilder mit erfundenen Tags (Aufruf über tools/screenshots.sh)."""
+"""Creates the README pictures with invented tags (run through tools/screenshots.sh)."""
 
 import json
 import os
@@ -11,13 +11,13 @@ sys.path.insert(0, ROOT)
 OUT = sys.argv[1]
 WORK = sys.argv[2]
 
-TAGS = [  # 01–03 sendet das Fake-BlueZ, 04 bleibt fürs Anlernen frei, 05–07 sind weg
-    ("AA:00:00:00:00:01", "Haustür", "schluessel", True),
-    ("AA:00:00:00:00:07", "Autoschlüssel", "auto", True),
-    ("AA:00:00:00:00:03", "Rucksack", "rucksack", False),
-    ("AA:00:00:00:00:02", "Geldbörse", "geldboerse", False),
-    ("AA:00:00:00:00:05", "Fahrrad", "fahrrad", False),
-    ("AA:00:00:00:00:06", "Hund Bello", "hund", False),
+TAGS = [  # fake BlueZ sends 01–03, 04 stays free for pairing, 05–07 are gone
+    ("AA:00:00:00:00:01", "Front door", "keys", True),
+    ("AA:00:00:00:00:07", "Car keys", "car", True),
+    ("AA:00:00:00:00:03", "Backpack", "backpack", False),
+    ("AA:00:00:00:00:02", "Wallet", "wallet", False),
+    ("AA:00:00:00:00:05", "Bike", "bicycle", False),
+    ("AA:00:00:00:00:06", "Dog Buddy", "dog", False),
 ]
 os.makedirs(os.path.dirname(os.environ["KEYFINDER_CONFIG"]), exist_ok=True)
 with open(os.environ["KEYFINDER_CONFIG"], "w") as f:
@@ -55,7 +55,7 @@ def shot(win, name, tries=40):
     node = snap.to_node()
     if node is None:
         if not tries:
-            sys.exit(f"{name}: kein Bild")
+            sys.exit(f"{name}: no picture")
         run(0.25)
         return shot(win, name, tries - 1)
     r = Gsk.CairoRenderer()
@@ -67,19 +67,19 @@ def shot(win, name, tries=40):
 
 
 def steps(a):
-    Gtk.Settings.get_default().props.gtk_decoration_layout = ""   # Phone: keine Fensterknöpfe
+    Gtk.Settings.get_default().props.gtk_decoration_layout = ""   # phone: no window buttons
     win = a.get_active_window()
     win.set_default_size(360, 720)
     run(3)
     shot(win, "tags")
 
     win.open_detail("AA:00:00:00:00:01")
-    win.tracker.trend = lambda _a: rssi.WARMER     # Momentaufnahme beim Näherkommen
+    win.tracker.trend = lambda _a: rssi.WARMER     # a snapshot while getting closer
     run(1.5)
     shot(win, "search")
 
     win.open_map("AA:00:00:00:00:01")
-    run(8)                                         # Kacheln laden
+    run(8)                                         # tiles are loading
     shot(win, "map")
     win.nav.pop_to_tag("main")
     run(1)
@@ -90,7 +90,7 @@ def steps(a):
     win._learn_pick(row)
     run(1)
     dialog = win.get_visible_dialog()
-    dialog.get_extra_child().get_first_child().set_text("Fahrradschloss")
+    dialog.get_extra_child().get_first_child().set_text("Bike lock")
     run(1.5)
     shot(win, "learn")
     dialog.force_close()

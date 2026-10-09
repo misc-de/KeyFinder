@@ -16,7 +16,7 @@
       <li>Follow the signal strength: warmer, colder</li>
       <li>Optionally remember where a tag was last seen and show it on a map</li>
     </ul>
-    <p>The user interface is in German.</p>
+    <p>Available in English, German, French and Spanish.</p>
   </description>
   <launchable type="desktop-id">io.github.miscde.KeyFinder.desktop</launchable>
   <url type="homepage">https://github.com/misc-de/KeyFinder</url>
@@ -43,6 +43,11 @@
   </requires>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.2.0" date="2026-10-09">
+      <description>
+        <p>English, French and Spanish besides German; the language can be picked in the menu.</p>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-10-09">
       <description>
         <p>First release.</p>

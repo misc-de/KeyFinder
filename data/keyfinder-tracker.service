@@ -1,8 +1,8 @@
-# Von der App ein- und ausgeschaltet: läuft genau dann, wenn mindestens ein Tag
-# „Standort merken“ hat. Nicht von Hand aktivieren – die nächste Änderung in
-# der App oder das nächste Update stellt den Zustand wieder her.
+# Switched by the app: runs exactly when at least one tag has "Remember
+# location" on. Do not enable it by hand – the next change in the app or the
+# next update restores the state.
 [Unit]
-Description=Key Finder: letzten Ort der Tags merken
+Description=Key Finder: remember where tags were last seen
 After=dbus.socket
 
 [Service]

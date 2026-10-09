@@ -1,4 +1,4 @@
-"""Kartenseite: letzter bekannter Ort eines Tags mit Umkreis (libshumate, OSM)."""
+"""Map page: last known place of a tag with the area it is in (libshumate, OSM)."""
 
 import math
 import time
@@ -6,6 +6,7 @@ import time
 from gi.repository import Adw, Gdk, Gtk
 
 from . import categories
+from .i18n import _, number
 from .locations import circle, radius
 
 try:
@@ -17,38 +18,40 @@ except (ImportError, ValueError):
 
 
 def when_text(ts, now=None):
-    """„heute 14:32“, „gestern 09:10“ oder „12.10. 14:32“."""
+    """"today 14:32", "yesterday 09:10" or a date with the time."""
     now = now or time.time()
     t, n = time.localtime(ts), time.localtime(now)
     clock = time.strftime("%H:%M", t)
     days = (time.mktime(n[:3] + (0, 0, 0) + n[6:]) - time.mktime(t[:3] + (0, 0, 0) + t[6:]))
     days = round(days / 86400)
     if days == 0:
-        return f"heute {clock}"
+        return _("today {time}").format(time=clock)
     if days == 1:
-        return f"gestern {clock}"
-    return time.strftime("%d.%m. ", t) + clock
+        return _("yesterday {time}").format(time=clock)
+    # translators: strftime pattern for day and month
+    return time.strftime(_("%m/%d"), t) + " " + clock
 
 
 def distance_text(meters):
     if meters < 1000:
         return f"{int(meters / 10.0 + 0.5) * 10 or 10} m"
-    return f"{meters / 1000:.1f} km".replace(".", ",")
+    return f"{number(meters / 1000)} km"
 
 
 def summary(entry):
-    """Eine Zeile für die Suchansicht."""
+    """One line for the search page."""
     if not entry or entry.get("seen") is None:
-        return "Noch kein Ort gespeichert"
+        return _("No place saved yet")
     seen = when_text(entry["seen"])
     r = radius(entry)
     if r is None:
-        return f"Zuletzt gesehen {seen}, ohne Standort"
-    return f"Zuletzt gesehen {seen} · Umkreis ca. {distance_text(r)}"
+        return _("Last seen {when}, without a position").format(when=seen)
+    return _("Last seen {when} · within about {distance}").format(
+        when=seen, distance=distance_text(r))
 
 
 def zoom_for(lat, meters, pixels=110):
-    """Zoomstufe, bei der der Umkreis etwa `pixels` Pixel Radius hat."""
+    """Zoom level at which the area has a radius of about `pixels` pixels."""
     per_px = meters / pixels
     z = math.log2(156543.03 * math.cos(math.radians(lat)) / max(per_px, 0.01))
     return max(3.0, min(18.0, z))
@@ -95,23 +98,23 @@ def build(tag, entry, parent):
         box.append(smap)
     else:
         box.append(Adw.StatusPage(icon_name="mark-location-symbolic", vexpand=True,
-                                  title="Kartenansicht nicht verfügbar",
-                                  description="libshumate fehlt (gir1.2-shumate-1.0)."))
+                                  title=_("Map not available"),
+                                  description=_("libshumate is missing (gir1.2-shumate-1.0).")))
 
     info = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin_top=12,
                    margin_bottom=12, margin_start=16, margin_end=16)
-    head = Gtk.Label(xalign=0, wrap=True,
-                     label=f"Zuletzt gesehen {when_text(entry['seen'])} · "
-                           f"Umkreis ca. {distance_text(r)}")
+    head = Gtk.Label(xalign=0, wrap=True, label=summary(entry))
     head.add_css_class("heading")
     info.append(head)
     gap = abs(entry.get("fix_time", 0) - entry.get("seen", 0))
-    detail = (f"Ortung auf ±{distance_text(entry.get('accuracy', 0))}"
-              + (f", {int(gap // 60)} min neben der Sichtung" if gap >= 60 else ""))
+    detail = _("Position within ±{distance}").format(
+        distance=distance_text(entry.get("accuracy", 0)))
+    if gap >= 60:
+        detail += ", " + _("{minutes} min apart from the sighting").format(minutes=int(gap // 60))
     note = Gtk.Label(xalign=0, wrap=True, label=detail)
     note.add_css_class("dim-label")
     info.append(note)
-    open_btn = Gtk.Button(label="In Karten öffnen", halign=Gtk.Align.START, margin_top=6)
+    open_btn = Gtk.Button(label=_("Open in Maps"), halign=Gtk.Align.START, margin_top=6)
     open_btn.add_css_class("pill")
     open_btn.connect("clicked", lambda _b: Gtk.UriLauncher.new(
         f"geo:{lat:.6f},{lon:.6f};u={r}").launch(parent, None, None, None))

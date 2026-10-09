@@ -1,4 +1,4 @@
-"""Angelernte Tags in ~/.config/keyfinder/tags.json."""
+"""Paired tags in ~/.config/keyfinder/tags.json."""
 
 import json
 import os
@@ -21,7 +21,8 @@ class TagStore:
         try:
             data = json.loads(self.path.read_text())
             self.tags = [{"address": t["address"].upper(), "name": t["name"],
-                          "category": t.get("category") or categories.guess(t["name"]),
+                          "category": (categories.migrate(t.get("category"))
+                                       or categories.guess(t["name"])),
                           "track": bool(t.get("track"))}
                          for t in data.get("tags", [])]
         except (OSError, ValueError, KeyError, TypeError):

@@ -1,9 +1,9 @@
-"""Hintergrunddienst: merkt sich, wo die Tags mit „Standort merken“ zuletzt waren.
+"""Background service: remembers where tags with "Remember location" were last seen.
 
-Jede Minute 10 s Bluetooth-Suche. GPS wird nur angefragt, wenn ein Tag
-gerade in der Nähe ist und die letzte Ortung älter als 5 Minuten ist, oder
-sofort, wenn ein Tag verschwunden ist – das ist die Position, die beim
-Suchen zählt. Ohne Tags mit Option beendet sich der Dienst.
+A 10 s Bluetooth scan every minute. The position is asked for only when a tag
+is nearby and the last fix is older than 5 minutes, or right away when a tag
+has gone missing – that is the position that matters when searching. Without
+any tag with the option the service ends.
 """
 
 import sys
@@ -31,10 +31,10 @@ class Tracker:
         self.clock = clock
         self.on_empty = on_empty or (lambda: None)
         self.tracked = set()
-        self.present = set()      # in der letzten Suche gesehen
-        self.seen_now = {}        # in der laufenden Suche: Adresse -> RSSI
-        self.waiting = set()      # bekommen die nächste Ortung
-        self.best = None          # Genauigkeit der besten Ortung dieser Runde
+        self.present = set()      # seen in the last scan
+        self.seen_now = {}        # in the running scan: address -> RSSI
+        self.waiting = set()      # get the next fix
+        self.best = None          # accuracy of this round's best fix
         self.fix_timer = None
         bluez.connect("rssi", self._on_rssi)
         locator.connect("fix", self._on_fix)
@@ -45,7 +45,7 @@ class Tracker:
         self.tracked = {t["address"] for t in store.tags if t.get("track")}
         return self.tracked
 
-    # --- eine Runde ----------------------------------------------------
+    # --- one round ------------------------------------------------------
 
     def begin_scan(self):
         self.locations.reload()
@@ -74,7 +74,7 @@ class Tracker:
             self.request_fix(lost | stale | present)
         self.locations.save()
 
-    # --- Ortung --------------------------------------------------------
+    # --- position -------------------------------------------------------
 
     def request_fix(self, addresses):
         self.waiting |= addresses
@@ -96,11 +96,11 @@ class Tracker:
             self._finish_fix()
 
     def _on_failed(self, _locator, message):
-        print("keyfinder-tracker: keine Ortung:", message, flush=True)
+        print("keyfinder-tracker: no position:", message, flush=True)
         self._finish_fix()
 
     def _fix_timeout(self):
-        self.fix_timer = None   # Quelle endet mit return False
+        self.fix_timer = None   # the source ends with return False
         self._finish_fix()
         return False
 
@@ -113,7 +113,7 @@ class Tracker:
 
 
 def claim_name():
-    """Nur ein Dienst gleichzeitig (App-Start, Autostart, systemd)."""
+    """Only one service at a time (app start, autostart, systemd)."""
     from gi.repository import Gio
     from .service import TRACKER_NAME
     bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
@@ -122,7 +122,7 @@ def claim_name():
                              GLib.Variant("(su)", (TRACKER_NAME, 4)),   # DO_NOT_QUEUE
                              GLib.VariantType("(u)"), Gio.DBusCallFlags.NONE, 5000,
                              None).unpack()
-    return reply == 1, bus      # bus festhalten, sonst geht der Name verloren
+    return reply == 1, bus      # keep the bus, or the name is lost
 
 
 def main():
@@ -131,7 +131,7 @@ def main():
 
     owner, _bus = claim_name()
     if not owner:
-        print("keyfinder-tracker: läuft schon", flush=True)
+        print("keyfinder-tracker: already running", flush=True)
         return 0
     loop = GLib.MainLoop()
     bluez = BlueZ()
@@ -149,11 +149,11 @@ def main():
 
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, 15, quit_)   # SIGTERM
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, 2, quit_)    # SIGINT
-    # Erste Runde, sobald BlueZ den Adapter gemeldet hat.
+    # First round once BlueZ has reported the adapter.
     GLib.timeout_add_seconds(2, lambda: cycle() and False)
     GLib.timeout_add_seconds(SCAN_EVERY_S, cycle)
     if not tracker.reload_tags():
-        print("keyfinder-tracker: kein Tag mit „Standort merken“, nichts zu tun", flush=True)
+        print("keyfinder-tracker: no tag with \"Remember location\", nothing to do", flush=True)
         return 0
     loop.run()
     tracker.locator.stop()

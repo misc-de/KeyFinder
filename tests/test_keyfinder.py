@@ -71,11 +71,11 @@ class TrackerTest(unittest.TestCase):
         self.assertEqual(self.tr.current(TAG), -50)
 
     def test_proximity_matches_bt_scanner(self):
-        self.assertEqual(rssi.proximity(-55), "sehr nah")
-        self.assertEqual(rssi.proximity(-67), "nah")
-        self.assertEqual(rssi.proximity(-78), "mittel")
-        self.assertEqual(rssi.proximity(-79), "weit")
-        self.assertEqual(rssi.proximity(None), "nicht in Reichweite")
+        self.assertEqual(rssi.proximity(-55), "very close")
+        self.assertEqual(rssi.proximity(-67), "close")
+        self.assertEqual(rssi.proximity(-78), "medium")
+        self.assertEqual(rssi.proximity(-79), "far")
+        self.assertEqual(rssi.proximity(None), "out of range")
         self.assertEqual(rssi.fraction(-200), 0.0)
         self.assertEqual(rssi.fraction(-10), 1.0)
 
@@ -91,34 +91,47 @@ class StoreTest(unittest.TestCase):
             s.remove(TV)
             again = TagStore(path)
             self.assertEqual(again.tags, [{"address": TAG, "name": "Haustür",
-                                           "category": "haus", "track": False}])
+                                           "category": "house", "track": False}])
 
     def test_category_kept_and_old_files(self):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "tags.json"
             path.write_text(json.dumps({"tags": [{"address": TAG, "name": "Fahrrad"}]}))
             s = TagStore(path)
-            self.assertEqual(s.get(TAG)["category"], "fahrrad")   # alte Datei: geraten
-            s.rename(TAG, "Mein Rad", "koffer")                    # selbst gewählt bleibt
-            self.assertEqual(TagStore(path).get(TAG)["category"], "koffer")
+            self.assertEqual(s.get(TAG)["category"], "bicycle")   # old file: guessed
+            s.rename(TAG, "Mein Rad", "suitcase")                  # a picked one stays
+            self.assertEqual(TagStore(path).get(TAG)["category"], "suitcase")
 
 
 class CategoryTest(unittest.TestCase):
     def test_guess(self):
         from keyfinder import categories as c
-        cases = {"Autoschlüssel": "auto", "Haustür": "haus", "Wohnungsschlüssel": "schluessel",
-                 "Fahrrad Lotte": "fahrrad", "Paradies": "sonstiges", "Rucksack": "rucksack",
-                 "Geldbörse": "geldboerse", "Hund Bello": "hund", "E-Bike": "fahrrad",
-                 "": "sonstiges", "Mein Rad": "fahrrad", "Koffer blau": "koffer"}
+        cases = {"Autoschlüssel": "car", "Car keys": "car", "Haustür": "house",
+                 "Wohnungsschlüssel": "keys", "Front door": "keys", "Fahrrad Lotte": "bicycle",
+                 "Paradies": "other", "Rucksack": "backpack", "Geldbörse": "wallet",
+                 "Cartera": "wallet", "Hund Bello": "dog", "E-Bike": "bicycle", "": "other",
+                 "Mein Rad": "bicycle", "Koffer blau": "suitcase", "Clés voiture": "keys",
+                 "Sac à dos": "backpack", "Llaves de casa": "keys", "Perro": "dog",
+                 "Chat Minou": "cat", "Valise": "suitcase"}
         for name, expected in cases.items():
             self.assertEqual(c.guess(name), expected, name)
+
+    def test_legacy_ids_are_migrated(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "tags.json"
+            path.write_text(json.dumps({"tags": [
+                {"address": TAG, "name": "Haustür", "category": "schluessel"},
+                {"address": TV, "name": "Weg", "category": "gibtsnicht"}]}))
+            s = TagStore(path)
+            self.assertEqual(s.get(TAG)["category"], "keys")
+            self.assertEqual(s.get(TV)["category"], "other")    # unknown: guessed
 
     def test_ids_unique_and_complete(self):
         from keyfinder import categories as c
         ids = [x[0] for x in c.CATEGORIES]
         self.assertEqual(len(ids), len(set(ids)))
         self.assertIn(c.DEFAULT, ids)
-        self.assertEqual(c.emoji("gibtsnicht"), c.emoji(c.DEFAULT))
+        self.assertEqual(c.emoji("nosuchthing"), c.emoji(c.DEFAULT))
 
     def test_broken_file(self):
         with tempfile.TemporaryDirectory() as d:
@@ -135,7 +148,7 @@ class FindCharsTest(unittest.TestCase):
             f"{dev}/s1/c1": {CHAR: {"UUID": ALERT_LEVEL, "Service": f"{dev}/s1"}},
             f"{dev}/s2": {SERVICE: {"UUID": IMMEDIATE_ALERT.upper()}},
             f"{dev}/s2/c1": {CHAR: {"UUID": ALERT_LEVEL, "Service": f"{dev}/s2"}},
-            # gleiches Muster bei einem anderen Gerät darf nicht zählen
+            # the same pattern below another device must not count
             "/org/bluez/hci0/dev_Y/s2": {SERVICE: {"UUID": IMMEDIATE_ALERT}},
         }
         self.assertEqual(find_alert_chars(objects, dev), (f"{dev}/s2/c1", f"{dev}/s1/c1"))
@@ -143,7 +156,7 @@ class FindCharsTest(unittest.TestCase):
 
 
 @unittest.skipUnless(os.environ.get("KEYFINDER_BUS") == "session",
-                     "nur über tests/run-tests.sh (privater Session-Bus)")
+                     "only through tests/run-tests.sh (private session bus)")
 class BlueZTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -172,7 +185,7 @@ class BlueZTest(unittest.TestCase):
             if value:
                 return value
             time.sleep(0.005)
-        self.fail("Zeitüberschreitung")
+        self.fail("timeout")
 
     def entries(self, op=None):
         lines = [json.loads(line) for line in self.log.read_text().splitlines()]
@@ -224,11 +237,11 @@ class BlueZTest(unittest.TestCase):
     def test_device_without_alert_reports_and_disconnects(self):
         self.start()
         error = self.beep(NO_ALERT, 2)
-        self.assertIn("kann nicht piepen", error)
+        self.assertIn("cannot beep", error)
         self.assertEqual(self.entries("disconnect")[-1]["address"], NO_ALERT)
 
     def test_out_of_range(self):
-        self.assertIn("nicht in Reichweite", self.beep("AA:BB:CC:DD:EE:FF", 2))
+        self.assertIn("out of range", self.beep("AA:BB:CC:DD:EE:FF", 2))
 
     def test_stop_when_not_connected_does_nothing(self):
         self.start()

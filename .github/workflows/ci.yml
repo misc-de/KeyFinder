@@ -10,8 +10,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      # Tests laufen gegen ein Fake-BlueZ/-GeoClue auf einem privaten D-Bus,
-      # systemctl ist eine Attrappe – kein Bluetooth nötig.
+      # Tests run against fake BlueZ/GeoClue on a private D-Bus, systemctl is a
+      # stand-in – no Bluetooth needed.
       - name: Install dependencies
         run: |
           sudo apt-get update

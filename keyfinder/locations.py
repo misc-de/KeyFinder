@@ -1,8 +1,8 @@
-"""Letzter bekannter Ort je Tag in ~/.local/share/keyfinder/locations.json.
+"""Last known place per tag in ~/.local/share/keyfinder/locations.json.
 
-Ein Eintrag hält, wann der Tag zuletzt gesehen wurde (seen, rssi) und die
-Position des Handys aus einer Ortung kurz davor oder danach (lat, lon,
-accuracy, fix_time). Daraus ergibt sich der Umkreis, in dem der Tag liegt.
+An entry holds when the tag was last seen (seen, rssi) and the phone's
+position from a fix shortly before or after that (lat, lon, accuracy,
+fix_time). From these follows the area the tag is in.
 """
 
 import json
@@ -11,7 +11,7 @@ import os
 import time
 from pathlib import Path
 
-WALK_M_PER_S = 1.4        # zwischen Sichtung und Ortung bewegt sich das Handy
+WALK_M_PER_S = 1.4        # the phone moves between sighting and fix
 MAX_DRIFT_M = 5000
 
 
@@ -23,7 +23,7 @@ def data_path():
 
 
 def ble_range(rssi):
-    """Grobe Reichweite in Metern zur Stufe aus rssi.proximity()."""
+    """Rough Bluetooth range in metres for the steps of rssi.level()."""
     if rssi is None:
         return 60
     if rssi >= -55:
@@ -36,7 +36,7 @@ def ble_range(rssi):
 
 
 def radius(entry):
-    """Umkreis in Metern oder None, wenn es keine Position gibt."""
+    """Radius of the area in metres, or None without a position."""
     if not entry or entry.get("lat") is None:
         return None
     drift = WALK_M_PER_S * abs(entry.get("fix_time", 0) - entry.get("seen", 0))
@@ -45,7 +45,7 @@ def radius(entry):
 
 
 def circle(lat, lon, meters, points=64):
-    """Punkte (lat, lon) eines Kreises, für die Karte."""
+    """Points (lat, lon) of a circle, for the map."""
     out = []
     dlat = meters / 111_320.0
     dlon = meters / (111_320.0 * max(0.01, math.cos(math.radians(lat))))
@@ -63,7 +63,7 @@ class LocationStore:
         self.reload()
 
     def reload(self):
-        """Neu einlesen, wenn die Datei sich geändert hat (der Dienst schreibt)."""
+        """Read again if the file changed (the background service writes it)."""
         try:
             mtime = self.path.stat().st_mtime_ns
         except OSError:

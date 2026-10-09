@@ -1,37 +1,47 @@
-"""Signalstärke glätten und daraus Nähe und Tendenz (wärmer/kälter) ableiten.
+"""Smooth the signal strength and derive proximity and trend (warmer/colder).
 
-BlueZ meldet RSSI nur bei Änderung, deshalb wird über Zeitfenster gerechnet
-und nicht über eine feste Zahl von Messwerten.
+BlueZ reports RSSI only when it changes, so everything is computed over time
+windows rather than over a fixed number of samples.
 """
 
 import time
 from collections import deque
 from statistics import median
 
-WINDOW_S = 2.0          # aktueller Wert = Median der letzten 2 s
-TREND_BACK_S = 6.0      # verglichen mit dem Median von 2–6 s davor
-TREND_DB = 3.0          # ab dieser Differenz: wärmer/kälter
-LOST_AFTER_S = 15.0     # so lange ohne Meldung = nicht in Reichweite
+from .i18n import _
+
+WINDOW_S = 2.0          # current value = median of the last 2 s
+TREND_BACK_S = 6.0      # compared with the median of the 2–6 s before
+TREND_DB = 3.0          # difference from which it is warmer/colder
+LOST_AFTER_S = 15.0     # no report for this long = out of range
 KEEP_S = 30.0
 
-WARMER, COLDER, STEADY, UNKNOWN = "wärmer", "kälter", "gleich", "unbekannt"
+WARMER, COLDER, STEADY, UNKNOWN = "warmer", "colder", "steady", "unknown"
+
+# Same steps as BT-Scanner.
+VERY_CLOSE, CLOSE, MEDIUM, FAR, OUT_OF_RANGE = "very_close", "close", "medium", "far", "out"
+
+
+def level(rssi):
+    if rssi is None:
+        return OUT_OF_RANGE
+    if rssi >= -55:
+        return VERY_CLOSE
+    if rssi >= -67:
+        return CLOSE
+    if rssi >= -78:
+        return MEDIUM
+    return FAR
 
 
 def proximity(rssi):
-    """Gleiche Stufen wie BT-Scanner."""
-    if rssi is None:
-        return "nicht in Reichweite"
-    if rssi >= -55:
-        return "sehr nah"
-    if rssi >= -67:
-        return "nah"
-    if rssi >= -78:
-        return "mittel"
-    return "weit"
+    """Proximity as text for the user."""
+    return {VERY_CLOSE: _("very close"), CLOSE: _("close"), MEDIUM: _("medium"),
+            FAR: _("far"), OUT_OF_RANGE: _("out of range")}[level(rssi)]
 
 
 def fraction(rssi):
-    """0…1 für einen Pegelbalken (−100 dBm … −40 dBm)."""
+    """0…1 for a level bar (−100 dBm … −40 dBm)."""
     if rssi is None:
         return 0.0
     return max(0.0, min(1.0, (rssi + 100) / 60.0))
@@ -59,14 +69,14 @@ class SignalTracker:
         return self.clock() - q[-1][0] if q else None
 
     def current(self, address):
-        """Geglätteter Wert in dBm oder None, wenn zu lange nichts kam."""
+        """Smoothed value in dBm, or None when nothing came for too long."""
         age = self.last_seen(address)
         if age is None or age > LOST_AFTER_S:
             return None
         recent = self._window(address, 0, WINDOW_S)
         if recent:
             return round(median(recent))
-        # Keine Änderung in letzter Zeit: letzter Wert gilt weiter.
+        # No change lately: the last value still holds.
         return self.samples[address.upper()][-1][1]
 
     def trend(self, address):

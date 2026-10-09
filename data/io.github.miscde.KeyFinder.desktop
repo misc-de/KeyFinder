@@ -1,12 +1,18 @@
 [Desktop Entry]
 Type=Application
 Name=Key Finder
-Comment=Bluetooth-Tags anlernen, piepen lassen und suchen
+Comment=Pair Bluetooth key tags, make them beep and find them
+Comment[de]=Bluetooth-Tags anlernen, piepen lassen und suchen
+Comment[fr]=Associer des balises Bluetooth, les faire sonner et les retrouver
+Comment[es]=Empareja etiquetas Bluetooth, hazlas pitar y encuéntralas
 Exec=keyfinder
 Icon=io.github.miscde.KeyFinder
 Terminal=false
 Categories=Utility;
-Keywords=iTag;Bluetooth;Schlüssel;Schlüsselfinder;Key;Tracker;Finder;
+Keywords=iTag;Bluetooth;Key;Tracker;Finder;
+Keywords[de]=iTag;Bluetooth;Schlüssel;Schlüsselfinder;Tracker;
+Keywords[fr]=iTag;Bluetooth;clés;balise;traceur;
+Keywords[es]=iTag;Bluetooth;llaves;etiqueta;localizador;
 StartupNotify=true
 StartupWMClass=io.github.miscde.KeyFinder
 X-Purism-FormFactor=Workstation;Mobile;
