@@ -1,0 +1,4 @@
+#!/bin/sh
+# Attrappe: schreibt nur mit, was die App schalten würde.
+echo "$*" >> "${FAKE_SYSTEMCTL_LOG:-/dev/null}"
+exit "${FAKE_SYSTEMCTL_EXIT:-0}"

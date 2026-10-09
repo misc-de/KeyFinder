@@ -1,0 +1,82 @@
+# Flatpak-Manifest für Key Finder (eigenes Repo, x86_64 + aarch64).
+#
+#   flatpak-builder --user --install --force-clean build-dir io.github.miscde.KeyFinder.yaml
+#   scripts/flatpak-release.sh      # beide Architekturen bauen, signieren, gh-pages
+id: io.github.miscde.KeyFinder
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+command: keyfinder
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Kartenkacheln von OpenStreetMap
+  - --share=network
+  # Bluetooth-Tags über BlueZ
+  - --system-talk-name=org.bluez
+  # Standort des Handys für „Standort merken“
+  - --system-talk-name=org.freedesktop.GeoClue2
+  # Hintergrunddienst beim Anmelden starten (nur bei „Standort merken“)
+  - --filesystem=xdg-config/autostart:create
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /share/gir-1.0
+  - /share/doc
+  - '*.a'
+  - '*.la'
+
+modules:
+  # Laufzeitbibliothek für libshumates Vektor-Renderer (die .pb-c-Dateien
+  # bringt libshumate fertig mit, der Compiler wird nicht gebraucht).
+  - name: protobuf-c
+    config-opts:
+      - --disable-protoc
+    sources:
+      - type: archive
+        url: https://github.com/protobuf-c/protobuf-c/releases/download/v1.5.2/protobuf-c-1.5.2.tar.gz
+        sha256: e2c86271873a79c92b58fef7ebf8de1aa0df4738347a8bd5d4e65a80a16d0d24
+
+  # Kartenansicht; nicht Teil der GNOME-Runtime.
+  - name: libshumate
+    buildsystem: meson
+    config-opts:
+      - -Dgir=true
+      - -Dvapi=false
+      - -Dgtk_doc=false
+      - -Ddemos=false
+      - -Dsysprof=disabled
+    sources:
+      - type: archive
+        url: https://download.gnome.org/sources/libshumate/1.6/libshumate-1.6.1.tar.xz
+        sha256: b36aad34500791785f546684d0f2ed644e4819ff4e85ae67a2245f159eccb2d4
+
+  - name: keyfinder
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/lib/keyfinder /app/bin
+      - cp -r keyfinder /app/lib/keyfinder/
+      - install -m755 bin/keyfinder /app/lib/keyfinder/keyfinder-launcher
+      - ln -s /app/lib/keyfinder/keyfinder-launcher /app/bin/keyfinder
+      - install -Dm644 VERSION /app/lib/keyfinder/VERSION
+      - install -Dm644 data/io.github.miscde.KeyFinder.desktop -t /app/share/applications/
+      - install -Dm644 data/io.github.miscde.KeyFinder.metainfo.xml -t /app/share/metainfo/
+      - |
+        for dir in data/icons/*/; do
+          size=$(basename "$dir")
+          install -Dm644 "$dir/io.github.miscde.KeyFinder.png" \
+            "/app/share/icons/hicolor/$size/apps/io.github.miscde.KeyFinder.png"
+        done
+    sources:
+      - type: dir
+        path: .
+        skip:
+          - repo
+          - build-dir
+          - .flatpak-builder
+          - .flatpak-build
+          - tests

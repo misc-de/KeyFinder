@@ -1,0 +1,15 @@
+# Von der App ein- und ausgeschaltet: läuft genau dann, wenn mindestens ein Tag
+# „Standort merken“ hat. Nicht von Hand aktivieren – die nächste Änderung in
+# der App oder das nächste Update stellt den Zustand wieder her.
+[Unit]
+Description=Key Finder: letzten Ort der Tags merken
+After=dbus.socket
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/keyfinder --tracker
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=default.target

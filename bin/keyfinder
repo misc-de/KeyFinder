@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+import os
+import sys
+
+# Installiert liegt das Paket neben dem Starter (~/.local/lib/keyfinder), im Quellbaum eine Ebene höher.
+here = os.path.dirname(os.path.realpath(__file__))
+for candidate in (here, os.path.join(here, "..")):
+    if os.path.isdir(os.path.join(candidate, "keyfinder")):
+        sys.path.insert(0, os.path.abspath(candidate))
+        break
+
+if "--tracker" in sys.argv[1:]:
+    from keyfinder.tracker import main  # Hintergrunddienst, ohne GTK
+elif "--sync-service" in sys.argv[1:]:
+    from keyfinder import service
+    from keyfinder.store import TagStore
+
+    def main():
+        return service.sync_blocking(TagStore(), restart="--restart" in sys.argv)
+else:
+    from keyfinder.app import main  # noqa: E402
+
+sys.exit(main())

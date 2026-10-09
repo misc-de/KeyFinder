@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      # Tests laufen gegen ein Fake-BlueZ/-GeoClue auf einem privaten D-Bus,
+      # systemctl ist eine Attrappe – kein Bluetooth nötig.
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-gi gir1.2-glib-2.0 \
+            gir1.2-gtk-4.0 gir1.2-adw-1 dbus appstream desktop-file-utils
+      - name: Tests
+        run: tests/run-tests.sh
+      - name: AppStream & desktop entry
+        run: |
+          appstreamcli validate --no-net data/io.github.miscde.KeyFinder.metainfo.xml
+          desktop-file-validate data/io.github.miscde.KeyFinder.desktop

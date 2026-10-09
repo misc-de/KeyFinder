@@ -1,0 +1,3 @@
+#!/bin/sh
+# Attrappe für flatpak-spawn: schreibt nur mit.
+echo "$*" >> "${FAKE_SPAWN_LOG:-/dev/null}"

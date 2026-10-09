@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.miscde.KeyFinder</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Key Finder</name>
+  <summary>Find Bluetooth key tags: beep, signal strength, last place seen</summary>
+  <developer id="io.github.misc-de">
+    <name>misc-de</name>
+  </developer>
+  <description>
+    <p>Key Finder works with cheap Bluetooth tags (iTag and alike) on Linux phones.</p>
+    <ul>
+      <li>Pair a tag and give it a name and a symbol</li>
+      <li>Make it beep</li>
+      <li>Follow the signal strength: warmer, colder</li>
+      <li>Optionally remember where a tag was last seen and show it on a map</li>
+    </ul>
+    <p>The user interface is in German.</p>
+  </description>
+  <launchable type="desktop-id">io.github.miscde.KeyFinder.desktop</launchable>
+  <url type="homepage">https://github.com/misc-de/KeyFinder</url>
+  <url type="bugtracker">https://github.com/misc-de/KeyFinder/issues</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Tags at a glance</caption>
+      <image>https://raw.githubusercontent.com/misc-de/KeyFinder/main/data/screenshots/tags.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Searching a tag</caption>
+      <image>https://raw.githubusercontent.com/misc-de/KeyFinder/main/data/screenshots/search.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Last place seen</caption>
+      <image>https://raw.githubusercontent.com/misc-de/KeyFinder/main/data/screenshots/map.png</image>
+    </screenshot>
+  </screenshots>
+  <recommends>
+    <control>touch</control>
+  </recommends>
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-10-09">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>
